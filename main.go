@@ -25,7 +25,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.6"
+const version = "0.0.7"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -79,7 +79,7 @@ func main() {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	u := url.URL{Scheme: "ws", Host: *addr, Path: "/sub/tasks"}
+	u := url.URL{Scheme: "ws", Host: *addr, Path: "/sub/tasks,zond" + zonduuid.String()}
 	log.Printf("connecting to %s", u.String())
 
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{"X-ZondUuid": {zonduuid.String()}})
@@ -111,6 +111,12 @@ func main() {
 					go ping(action.Param, action.Uuid)
 				} else if action.Action == "head" {
 					go head(action.Param, action.Uuid)
+				} else if action.Action == "alive" {
+					ccAddr := *addr
+					action.ZondUuid = zonduuid.String()
+					js, _ := json.Marshal(action)
+					// log.Println("http://"+ccAddr+"/pong", string(js))
+					go post("http://"+ccAddr+"/pong", string(js))
 				}
 			}
 		}
