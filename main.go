@@ -22,7 +22,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.3"
+const version = "0.0.4"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -100,6 +100,8 @@ func main() {
 				fmt.Printf("%+v\n", action)
 				if action.Action == "ping" {
 					go ping(action.Param, action.Uuid)
+				} else if action.Action == "head" {
+					go head(action.Param, action.Uuid)
 				}
 			}
 		}
@@ -171,6 +173,44 @@ func ping(address string, taskuuid string) {
 			if err != nil {
 				fmt.Println("Error", err)
 			}
+		}
+	}
+}
+
+func head(address string, taskuuid string) {
+	ccAddr := *addr
+	var action = Action{ZondUuid: zonduuid.String(), Action: "block", Result: "", Uuid: taskuuid}
+	var js, _ = json.Marshal(action)
+	var status = post("http://"+ccAddr+"/task/block", string(js))
+
+	if status != `{"status": "ok", "message": "ok"}` {
+		log.Println(taskuuid, status)
+		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+			head(address, taskuuid)
+		}
+	} else {
+		res, err := http.Head(address)
+		if err != nil {
+			// fmt.Println(address+" http head failed: ", err)
+			log.Println(address+" http head failed: ", err)
+			action := Action{ZondUuid: zonduuid.String(), Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
+			js, _ := json.Marshal(action)
+
+			post("http://"+ccAddr+"/task/result", string(js))
+		} else {
+			headers := res.Header
+			var s string
+			for key, val := range headers {
+				s += fmt.Sprintf("%s: %s\n", key, val)
+			}
+			// fmt.Printf("Headers: %v\n", s)
+			log.Printf("Headers: %v", s)
+
+			action = Action{ZondUuid: zonduuid.String(), Action: "result", Result: s, Uuid: taskuuid}
+			js, _ = json.Marshal(action)
+
+			post("http://"+ccAddr+"/task/result", string(js))
 		}
 	}
 }
