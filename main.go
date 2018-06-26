@@ -25,7 +25,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.5"
+const version = "0.0.6"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -40,14 +40,7 @@ func selfUpdate(slug string) error {
 		fmt.Println("Update successfully done to version", latest.Version)
 		fmt.Println("Release note:\n", latest.ReleaseNotes)
 
-		file, err := osext.Executable()
-		if err != nil {
-			return err
-		}
-		err = syscall.Exec(file, os.Args, os.Environ())
-		if err != nil {
-			log.Fatal(err)
-		}
+		restart()
 	}
 
 	return nil
@@ -103,7 +96,9 @@ func main() {
 			_, message, err := ws.ReadMessage()
 			if err != nil {
 				log.Println("read:", err)
-				return
+				time.Sleep(time.Duration(rand.Intn(5)) * time.Second)
+				restart()
+				// return
 			}
 			// log.Printf("recv: %s", message)
 			var action = new(Action)
@@ -137,6 +132,18 @@ func main() {
 			case <-time.After(time.Second):
 			}
 			return
+		}
+	}
+}
+
+func restart() {
+	file, err := osext.Executable()
+	if err != nil {
+		log.Println("restart:", err)
+	} else {
+		err = syscall.Exec(file, os.Args, os.Environ())
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 }
