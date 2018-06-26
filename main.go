@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -98,6 +99,10 @@ func ping(address string, taskuuid string) {
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		log.Println(taskuuid, status)
+		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
+			time.Sleep(time.Duration(rand.Intn(10000)) * time.Millisecond)
+			ping(address, taskuuid)
+		}
 	} else {
 		p := fastping.NewPinger()
 		ra, err := net.ResolveIPAddr("ip4:icmp", address)
