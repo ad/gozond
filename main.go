@@ -15,10 +15,41 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/gorilla/websocket"
 	"github.com/nu7hatch/gouuid"
+	"github.com/rhysd/go-github-selfupdate/selfupdate"
 	"github.com/tatsushid/go-fastping"
 )
+
+const version = "0.0.2"
+
+func selfUpdate(slug string) error {
+	previous := semver.MustParse(version)
+	latest, err := selfupdate.UpdateSelf(previous, slug)
+	if err != nil {
+		return err
+	}
+
+	if previous.Equals(latest.Version) {
+		fmt.Println("Current binary is the latest version", version)
+	} else {
+		fmt.Println("Update successfully done to version", latest.Version)
+		fmt.Println("Release note:\n", latest.ReleaseNotes)
+	}
+
+	ticker := time.NewTicker(1 * time.Minute)
+	go func(ticker *time.Ticker) {
+		for {
+			select {
+			case <-ticker.C:
+				selfUpdate(slug)
+			}
+		}
+	}(ticker)
+
+	return nil
+}
 
 var addr = flag.String("addr", "localhost:80", "http service address")
 var zonduuid, _ = uuid.NewV4()
@@ -32,6 +63,11 @@ type Action struct {
 }
 
 func main() {
+	if err := selfUpdate("ad/gozond"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	flag.Parse()
 	log.SetFlags(0)
 
