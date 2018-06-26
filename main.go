@@ -22,7 +22,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.2"
+const version = "0.0.3"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -37,16 +37,6 @@ func selfUpdate(slug string) error {
 		fmt.Println("Update successfully done to version", latest.Version)
 		fmt.Println("Release note:\n", latest.ReleaseNotes)
 	}
-
-	ticker := time.NewTicker(1 * time.Minute)
-	go func(ticker *time.Ticker) {
-		for {
-			select {
-			case <-ticker.C:
-				selfUpdate(slug)
-			}
-		}
-	}(ticker)
 
 	return nil
 }
@@ -63,10 +53,18 @@ type Action struct {
 }
 
 func main() {
-	if err := selfUpdate("ad/gozond"); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	ticker := time.NewTicker(10 * time.Minute)
+	go func(ticker *time.Ticker) {
+		for {
+			select {
+			case <-ticker.C:
+				if err := selfUpdate("ad/gozond"); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+			}
+		}
+	}(ticker)
 
 	flag.Parse()
 	log.SetFlags(0)
