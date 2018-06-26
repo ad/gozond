@@ -15,6 +15,9 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/kardianos/osext"
+	"syscall"
+
 	"github.com/blang/semver"
 	"github.com/gorilla/websocket"
 	"github.com/nu7hatch/gouuid"
@@ -22,7 +25,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.4"
+const version = "0.0.5"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -32,10 +35,19 @@ func selfUpdate(slug string) error {
 	}
 
 	if previous.Equals(latest.Version) {
-		fmt.Println("Current binary is the latest version", version)
+		// fmt.Println("Current binary is the latest version", version)
 	} else {
 		fmt.Println("Update successfully done to version", latest.Version)
 		fmt.Println("Release note:\n", latest.ReleaseNotes)
+
+		file, err := osext.Executable()
+		if err != nil {
+			return err
+		}
+		err = syscall.Exec(file, os.Args, os.Environ())
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	return nil
@@ -53,6 +65,8 @@ type Action struct {
 }
 
 func main() {
+	log.Printf("Started version %s", version)
+
 	ticker := time.NewTicker(10 * time.Minute)
 	go func(ticker *time.Ticker) {
 		for {
