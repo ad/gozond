@@ -67,7 +67,7 @@ func main() {
 			case <-ticker.C:
 				if err := selfUpdate("ad/gozond"); err != nil {
 					fmt.Fprintln(os.Stderr, err)
-					os.Exit(1)
+					// os.Exit(1)
 				}
 			}
 		}
