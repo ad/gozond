@@ -25,7 +25,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.7"
+const version = "0.0.8"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
