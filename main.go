@@ -116,7 +116,7 @@ func main() {
 					action.ZondUuid = zonduuid.String()
 					js, _ := json.Marshal(action)
 					// log.Println("http://"+ccAddr+"/pong", string(js))
-					go post("http://"+ccAddr+"/pong", string(js))
+					go post("http://"+ccAddr+"/zond/pong", string(js))
 				}
 			}
 		}
