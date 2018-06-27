@@ -25,7 +25,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.10"
+const version = "0.0.11"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -46,8 +46,9 @@ func selfUpdate(slug string) error {
 	return nil
 }
 
-var addr = flag.String("addr", "localhost:80", "http service address")
-var zonduuid, _ = uuid.NewV4()
+var zu, _ = uuid.NewV4()
+var addr = flag.String("addr", "localhost:80", "cc address:port")
+var zonduuid = flag.String("uuid", zu.String(), "zond uuid")
 
 type Action struct {
 	ZondUuid string `json:"zond"`
@@ -79,10 +80,10 @@ func main() {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	u := url.URL{Scheme: "ws", Host: *addr, Path: "/sub/tasks,zond" + zonduuid.String()}
+	u := url.URL{Scheme: "ws", Host: *addr, Path: "/sub/tasks,zond" + *zonduuid}
 	log.Printf("connecting to %s", u.String())
 
-	ws, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{"X-ZondUuid": {zonduuid.String()}})
+	ws, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{"X-ZondUuid": {*zonduuid}})
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
@@ -113,7 +114,7 @@ func main() {
 					go head(action.Param, action.Uuid)
 				} else if action.Action == "alive" {
 					ccAddr := *addr
-					action.ZondUuid = zonduuid.String()
+					action.ZondUuid = *zonduuid
 					js, _ := json.Marshal(action)
 					// log.Println("http://"+ccAddr+"/pong", string(js))
 					go post("http://"+ccAddr+"/zond/pong", string(js))
@@ -156,7 +157,7 @@ func restart() {
 
 func ping(address string, taskuuid string) {
 	ccAddr := *addr
-	var action = Action{ZondUuid: zonduuid.String(), Action: "block", Result: "", Uuid: taskuuid}
+	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
 	var status = post("http://"+ccAddr+"/task/block", string(js))
 
@@ -171,7 +172,7 @@ func ping(address string, taskuuid string) {
 		ra, err := net.ResolveIPAddr("ip4:icmp", address)
 		if err != nil {
 			fmt.Println(address+" ping failed: ", err)
-			action := Action{ZondUuid: zonduuid.String(), Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
+			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
 			js, _ := json.Marshal(action)
 
 			post("http://"+ccAddr+"/task/result", string(js))
@@ -182,7 +183,7 @@ func ping(address string, taskuuid string) {
 				received = true
 				fmt.Printf("IP Addr: %s receive, RTT: %v\n", addr.String(), rtt)
 
-				action = Action{ZondUuid: zonduuid.String(), Action: "result", Result: rtt.String(), Uuid: taskuuid}
+				action = Action{ZondUuid: *zonduuid, Action: "result", Result: rtt.String(), Uuid: taskuuid}
 				js, _ = json.Marshal(action)
 
 				post("http://"+ccAddr+"/task/result", string(js))
@@ -190,7 +191,7 @@ func ping(address string, taskuuid string) {
 			p.OnIdle = func() {
 				if !received {
 					fmt.Println(address + " ping failed")
-					action := Action{ZondUuid: zonduuid.String(), Action: "result", Result: "failed", Uuid: taskuuid}
+					action := Action{ZondUuid: *zonduuid, Action: "result", Result: "failed", Uuid: taskuuid}
 					js, _ := json.Marshal(action)
 
 					post("http://"+ccAddr+"/task/result", string(js))
@@ -206,7 +207,7 @@ func ping(address string, taskuuid string) {
 
 func head(address string, taskuuid string) {
 	ccAddr := *addr
-	var action = Action{ZondUuid: zonduuid.String(), Action: "block", Result: "", Uuid: taskuuid}
+	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
 	var status = post("http://"+ccAddr+"/task/block", string(js))
 
@@ -221,7 +222,7 @@ func head(address string, taskuuid string) {
 		if err != nil {
 			// fmt.Println(address+" http head failed: ", err)
 			log.Println(address+" http head failed: ", err)
-			action := Action{ZondUuid: zonduuid.String(), Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
+			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
 			js, _ := json.Marshal(action)
 
 			post("http://"+ccAddr+"/task/result", string(js))
@@ -234,7 +235,7 @@ func head(address string, taskuuid string) {
 			// fmt.Printf("Headers: %v\n", s)
 			log.Printf("Headers: %v", s)
 
-			action = Action{ZondUuid: zonduuid.String(), Action: "result", Result: s, Uuid: taskuuid}
+			action = Action{ZondUuid: *zonduuid, Action: "result", Result: s, Uuid: taskuuid}
 			js, _ = json.Marshal(action)
 
 			post("http://"+ccAddr+"/task/result", string(js))
