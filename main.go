@@ -13,10 +13,10 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/kardianos/osext"
-	"syscall"
 
 	"github.com/blang/semver"
 	"github.com/gorilla/websocket"
@@ -25,7 +25,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.11"
+const version = "0.0.12"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -159,7 +159,7 @@ func ping(address string, taskuuid string) {
 	ccAddr := *addr
 	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
-	var status = post("http://"+ccAddr+"/task/block", string(js))
+	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		log.Println(taskuuid, status)
@@ -175,7 +175,7 @@ func ping(address string, taskuuid string) {
 			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
 			js, _ := json.Marshal(action)
 
-			post("http://"+ccAddr+"/task/result", string(js))
+			post("http://"+ccAddr+"/zond/task/result", string(js))
 		} else {
 			p.AddIPAddr(ra)
 			var received = false
@@ -186,7 +186,7 @@ func ping(address string, taskuuid string) {
 				action = Action{ZondUuid: *zonduuid, Action: "result", Result: rtt.String(), Uuid: taskuuid}
 				js, _ = json.Marshal(action)
 
-				post("http://"+ccAddr+"/task/result", string(js))
+				post("http://"+ccAddr+"/zond/task/result", string(js))
 			}
 			p.OnIdle = func() {
 				if !received {
@@ -194,7 +194,7 @@ func ping(address string, taskuuid string) {
 					action := Action{ZondUuid: *zonduuid, Action: "result", Result: "failed", Uuid: taskuuid}
 					js, _ := json.Marshal(action)
 
-					post("http://"+ccAddr+"/task/result", string(js))
+					post("http://"+ccAddr+"/zond/task/result", string(js))
 				}
 			}
 			err = p.Run()
@@ -209,7 +209,7 @@ func head(address string, taskuuid string) {
 	ccAddr := *addr
 	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
-	var status = post("http://"+ccAddr+"/task/block", string(js))
+	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		log.Println(taskuuid, status)
@@ -225,7 +225,7 @@ func head(address string, taskuuid string) {
 			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
 			js, _ := json.Marshal(action)
 
-			post("http://"+ccAddr+"/task/result", string(js))
+			post("http://"+ccAddr+"/zond/task/result", string(js))
 		} else {
 			headers := res.Header
 			var s string
@@ -238,7 +238,7 @@ func head(address string, taskuuid string) {
 			action = Action{ZondUuid: *zonduuid, Action: "result", Result: s, Uuid: taskuuid}
 			js, _ = json.Marshal(action)
 
-			post("http://"+ccAddr+"/task/result", string(js))
+			post("http://"+ccAddr+"/zond/task/result", string(js))
 		}
 	}
 }
@@ -269,12 +269,14 @@ func post(url string, jsonData string) string {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
+		log.Println(err)
+		return "error"
+	} else {
+		defer resp.Body.Close()
 
-	// fmt.Println("response Status:", resp.Status)
-	// fmt.Println("response Headers:", resp.Header)
-	body, _ := ioutil.ReadAll(resp.Body)
-	return string(body)
+		// fmt.Println("response Status:", resp.Status)
+		// fmt.Println("response Headers:", resp.Header)
+		body, _ := ioutil.ReadAll(resp.Body)
+		return string(body)
+	}
 }
