@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.12"
+const version = "0.0.14"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -112,6 +113,8 @@ func main() {
 					go ping(action.Param, action.Uuid)
 				} else if action.Action == "head" {
 					go head(action.Param, action.Uuid)
+				} else if action.Action == "dns" {
+					go dns(action.Param, action.Uuid)
 				} else if action.Action == "alive" {
 					ccAddr := *addr
 					action.ZondUuid = *zonduuid
@@ -201,6 +204,42 @@ func ping(address string, taskuuid string) {
 			if err != nil {
 				fmt.Println("Error", err)
 			}
+		}
+	}
+}
+
+func dns(address string, taskuuid string) {
+	ccAddr := *addr
+	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
+	var js, _ = json.Marshal(action)
+	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
+
+	if status != `{"status": "ok", "message": "ok"}` {
+		log.Println(taskuuid, status)
+		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+			head(address, taskuuid)
+		}
+	} else {
+		ips, err := net.LookupIP(address)
+		if err != nil {
+			log.Println(address+" dns failed: ", err)
+			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
+			js, _ := json.Marshal(action)
+
+			post("http://"+ccAddr+"/zond/task/result", string(js))
+		} else {
+			var s []string
+			for _, ip := range ips {
+				s = append(s, ip.String())
+			}
+			var res = strings.Join(s[:], ",")
+			log.Printf("IPS: %v", res)
+
+			action = Action{ZondUuid: *zonduuid, Action: "result", Result: res, Uuid: taskuuid}
+			js, _ = json.Marshal(action)
+
+			post("http://"+ccAddr+"/zond/task/result", string(js))
 		}
 	}
 }
