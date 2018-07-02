@@ -20,13 +20,14 @@ import (
 	"github.com/kardianos/osext"
 
 	"github.com/blang/semver"
+	"github.com/bogdanovich/dns_resolver"
 	"github.com/gorilla/websocket"
 	"github.com/nu7hatch/gouuid"
 	"github.com/rhysd/go-github-selfupdate/selfupdate"
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.14"
+const version = "0.0.15"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -221,7 +222,17 @@ func dns(address string, taskuuid string) {
 			head(address, taskuuid)
 		}
 	} else {
-		ips, err := net.LookupIP(address)
+		var resolver_address = "8.8.8.8"
+		if strings.Count(address, "-") == 1 {
+			s := strings.Split(address, "-")
+			address, resolver_address = s[0], s[1]
+		}
+		resolver := dns_resolver.New([]string{resolver_address})
+		// resolver := dns_resolver.NewFromResolvConf("resolv.conf")
+		resolver.RetryTimes = 5
+
+		ips, err := resolver.LookupHost(address)
+
 		if err != nil {
 			log.Println(address+" dns failed: ", err)
 			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
