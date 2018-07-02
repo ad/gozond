@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kardianos/osext"
+	"github.com/lixiangzhong/traceroute"
 
 	"github.com/blang/semver"
 	"github.com/bogdanovich/dns_resolver"
@@ -27,7 +28,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.15"
+const version = "0.0.16"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -111,11 +112,13 @@ func main() {
 			} else {
 				fmt.Printf("%+v\n", action)
 				if action.Action == "ping" {
-					go ping(action.Param, action.Uuid)
+					go pingCheck(action.Param, action.Uuid)
 				} else if action.Action == "head" {
-					go head(action.Param, action.Uuid)
+					go headCheck(action.Param, action.Uuid)
 				} else if action.Action == "dns" {
-					go dns(action.Param, action.Uuid)
+					go dnsCheck(action.Param, action.Uuid)
+				} else if action.Action == "traceroute" {
+					go tracerouteCheck(action.Param, action.Uuid)
 				} else if action.Action == "alive" {
 					ccAddr := *addr
 					action.ZondUuid = *zonduuid
@@ -159,7 +162,7 @@ func restart() {
 	}
 }
 
-func ping(address string, taskuuid string) {
+func pingCheck(address string, taskuuid string) {
 	ccAddr := *addr
 	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
@@ -169,7 +172,7 @@ func ping(address string, taskuuid string) {
 		log.Println(taskuuid, status)
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10000)) * time.Millisecond)
-			ping(address, taskuuid)
+			pingCheck(address, taskuuid)
 		}
 	} else {
 		p := fastping.NewPinger()
@@ -209,7 +212,7 @@ func ping(address string, taskuuid string) {
 	}
 }
 
-func dns(address string, taskuuid string) {
+func dnsCheck(address string, taskuuid string) {
 	ccAddr := *addr
 	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
@@ -219,7 +222,7 @@ func dns(address string, taskuuid string) {
 		log.Println(taskuuid, status)
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
-			head(address, taskuuid)
+			dnsCheck(address, taskuuid)
 		}
 	} else {
 		var resolver_address = "8.8.8.8"
@@ -255,7 +258,7 @@ func dns(address string, taskuuid string) {
 	}
 }
 
-func head(address string, taskuuid string) {
+func tracerouteCheck(address string, taskuuid string) {
 	ccAddr := *addr
 	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
 	var js, _ = json.Marshal(action)
@@ -265,7 +268,50 @@ func head(address string, taskuuid string) {
 		log.Println(taskuuid, status)
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
-			head(address, taskuuid)
+			tracerouteCheck(address, taskuuid)
+		}
+	} else {
+		t := traceroute.New(address)
+		//t.MaxTTL=30
+		//t.Timeout=3 * time.Second
+		//t.LocalAddr="0.0.0.0"
+		result, err := t.Do()
+
+		if err != nil {
+			log.Println(address+" traceroute failed: ", err)
+			action := Action{ZondUuid: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), Uuid: taskuuid}
+			js, _ := json.Marshal(action)
+
+			post("http://"+ccAddr+"/zond/task/result", string(js))
+		} else {
+			var s []string
+
+			for _, v := range result {
+				s = append(s, v.String())
+			}
+
+			var res = strings.Join(s[:], "\n")
+			log.Printf("Result: %v", res)
+
+			action = Action{ZondUuid: *zonduuid, Action: "result", Result: res, Uuid: taskuuid}
+			js, _ = json.Marshal(action)
+
+			post("http://"+ccAddr+"/zond/task/result", string(js))
+		}
+	}
+}
+
+func headCheck(address string, taskuuid string) {
+	ccAddr := *addr
+	var action = Action{ZondUuid: *zonduuid, Action: "block", Result: "", Uuid: taskuuid}
+	var js, _ = json.Marshal(action)
+	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
+
+	if status != `{"status": "ok", "message": "ok"}` {
+		log.Println(taskuuid, status)
+		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+			headCheck(address, taskuuid)
 		}
 	} else {
 		res, err := http.Head(address)
