@@ -28,7 +28,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.16"
+const version = "0.0.17"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -124,7 +124,7 @@ func main() {
 					action.ZondUuid = *zonduuid
 					js, _ := json.Marshal(action)
 					// log.Println("http://"+ccAddr+"/pong", string(js))
-					go post("http://"+ccAddr+"/zond/pong", string(js))
+					post("http://"+ccAddr+"/zond/pong", string(js))
 				}
 			}
 		}
@@ -369,10 +369,15 @@ func post(url string, jsonData string) string {
 		return "error"
 	} else {
 		defer resp.Body.Close()
-
-		// fmt.Println("response Status:", resp.Status)
-		// fmt.Println("response Headers:", resp.Header)
-		body, _ := ioutil.ReadAll(resp.Body)
-		return string(body)
+		if resp.StatusCode == 429 {
+			log.Printf("%s: %d", url, resp.StatusCode)
+			time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
+			return post(url, jsonData)
+		} else {
+			// fmt.Println("response Status:", resp.Status)
+			// fmt.Println("response Headers:", resp.Header)
+			body, _ := ioutil.ReadAll(resp.Body)
+			return string(body)
+		}
 	}
 }
