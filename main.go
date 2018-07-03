@@ -28,7 +28,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.17"
+const version = "0.0.18"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -110,7 +110,10 @@ func main() {
 			if err != nil {
 				fmt.Println("error:", err)
 			} else {
-				fmt.Printf("%+v\n", action)
+				if action.Action != "alive" {
+					fmt.Printf("%+v\n", action)
+				}
+
 				if action.Action == "ping" {
 					go pingCheck(action.Param, action.Uuid)
 				} else if action.Action == "head" {
@@ -169,10 +172,11 @@ func pingCheck(address string, taskuuid string) {
 	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
 
 	if status != `{"status": "ok", "message": "ok"}` {
-		log.Println(taskuuid, status)
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10000)) * time.Millisecond)
 			pingCheck(address, taskuuid)
+		} else if status != `{"status": "error", "message": "task not found"}` {
+			log.Println(taskuuid, status)
 		}
 	} else {
 		p := fastping.NewPinger()
@@ -219,10 +223,12 @@ func dnsCheck(address string, taskuuid string) {
 	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
 
 	if status != `{"status": "ok", "message": "ok"}` {
-		log.Println(taskuuid, status)
+
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 			dnsCheck(address, taskuuid)
+		} else if status != `{"status": "error", "message": "task not found"}` {
+			log.Println(taskuuid, status)
 		}
 	} else {
 		var resolver_address = "8.8.8.8"
@@ -265,10 +271,11 @@ func tracerouteCheck(address string, taskuuid string) {
 	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
 
 	if status != `{"status": "ok", "message": "ok"}` {
-		log.Println(taskuuid, status)
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 			tracerouteCheck(address, taskuuid)
+		} else if status != `{"status": "error", "message": "task not found"}` {
+			log.Println(taskuuid, status)
 		}
 	} else {
 		t := traceroute.New(address)
@@ -308,10 +315,11 @@ func headCheck(address string, taskuuid string) {
 	var status = post("http://"+ccAddr+"/zond/task/block", string(js))
 
 	if status != `{"status": "ok", "message": "ok"}` {
-		log.Println(taskuuid, status)
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 			headCheck(address, taskuuid)
+		} else if status != `{"status": "error", "message": "task not found"}` {
+			log.Println(taskuuid, status)
 		}
 	} else {
 		res, err := http.Head(address)
