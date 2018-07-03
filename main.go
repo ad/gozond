@@ -28,7 +28,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.18"
+const version = "0.0.19"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -87,11 +87,12 @@ func main() {
 	log.Printf("connecting to %s", u.String())
 
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{"X-ZondUuid": {*zonduuid}})
+	if ws != nil {
+		defer ws.Close()
+	}
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
-	defer ws.Close()
-
 	done := make(chan struct{})
 
 	go func() {
@@ -322,7 +323,10 @@ func headCheck(address string, taskuuid string) {
 			log.Println(taskuuid, status)
 		}
 	} else {
-		res, err := http.Head(address)
+		resp, err := http.Head(address)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		if err != nil {
 			// fmt.Println(address+" http head failed: ", err)
 			log.Println(address+" http head failed: ", err)
@@ -331,7 +335,7 @@ func headCheck(address string, taskuuid string) {
 
 			post("http://"+ccAddr+"/zond/task/result", string(js))
 		} else {
-			headers := res.Header
+			headers := resp.Header
 			var s string
 			for key, val := range headers {
 				s += fmt.Sprintf("%s: %s\n", key, val)
@@ -348,13 +352,15 @@ func headCheck(address string, taskuuid string) {
 }
 
 func get(url string) string {
-	response, err := http.Get(url)
+	resp, err := http.Get(url)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		fmt.Printf("%s", err)
 		// os.Exit(1)
 	} else {
-		defer response.Body.Close()
-		contents, err := ioutil.ReadAll(response.Body)
+		contents, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			fmt.Printf("%s", err)
 			os.Exit(1)
@@ -372,11 +378,13 @@ func post(url string, jsonData string) string {
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		log.Println(err)
 		return "error"
 	} else {
-		defer resp.Body.Close()
 		if resp.StatusCode == 429 {
 			log.Printf("%s: %d", url, resp.StatusCode)
 			time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
