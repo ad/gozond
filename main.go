@@ -28,7 +28,7 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.19"
+const version = "0.0.20"
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -375,6 +375,7 @@ func post(url string, jsonData string) string {
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ZondUuid", *zonduuid)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
