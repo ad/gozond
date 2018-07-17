@@ -19,6 +19,7 @@ import (
 
 	"github.com/kardianos/osext"
 	"github.com/lixiangzhong/traceroute"
+	"github.com/tevino/abool"
 
 	"github.com/blang/semver"
 	"github.com/bogdanovich/dns_resolver"
@@ -28,7 +29,9 @@ import (
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.0.20"
+const version = "0.0.21"
+
+var pongStarted = abool.New()
 
 func selfUpdate(slug string) error {
 	previous := semver.MustParse(version)
@@ -116,19 +119,23 @@ func main() {
 				}
 
 				if action.Action == "ping" {
-					go pingCheck(action.Param, action.Uuid)
+					pingCheck(action.Param, action.Uuid)
 				} else if action.Action == "head" {
-					go headCheck(action.Param, action.Uuid)
+					headCheck(action.Param, action.Uuid)
 				} else if action.Action == "dns" {
-					go dnsCheck(action.Param, action.Uuid)
+					dnsCheck(action.Param, action.Uuid)
 				} else if action.Action == "traceroute" {
-					go tracerouteCheck(action.Param, action.Uuid)
+					tracerouteCheck(action.Param, action.Uuid)
 				} else if action.Action == "alive" {
-					ccAddr := *addr
-					action.ZondUuid = *zonduuid
-					js, _ := json.Marshal(action)
-					// log.Println("http://"+ccAddr+"/pong", string(js))
-					post("http://"+ccAddr+"/zond/pong", string(js))
+					if !pongStarted.IsSet() {
+						pongStarted.Set()
+						ccAddr := *addr
+						action.ZondUuid = *zonduuid
+						js, _ := json.Marshal(action)
+						// log.Println("http://"+ccAddr+"/pong", string(js))
+						post("http://"+ccAddr+"/zond/pong", string(js))
+						pongStarted.UnSet()
+					}
 				}
 			}
 		}
