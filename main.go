@@ -177,11 +177,24 @@ func Restart() error {
 	return nil
 }
 
-func pingCheck(address string, taskuuid string) {
-	ccAddr := *addr
+func blockTask(taskuuid string) (status string) {
 	var action = Action{ZondUUID: *zonduuid, Action: "block", Result: "", UUID: taskuuid}
 	var js, _ = json.Marshal(action)
-	var status = Post("http://"+*addr+"/zond/task/block", string(js))
+	status = Post("http://"+*addr+"/zond/task/block", string(js))
+
+	return status
+}
+
+func resultTask(taskuuid string, result string) (status string) {
+	var action = Action{ZondUUID: *zonduuid, Action: "result", Result: result, UUID: taskuuid}
+	var js, _ = json.Marshal(action)
+	status = Post("http://"+*addr+"/zond/task/result", string(js))
+
+	return status
+}
+
+func pingCheck(address string, taskuuid string) {
+	var status = blockTask(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -195,10 +208,8 @@ func pingCheck(address string, taskuuid string) {
 		ra, err := net.ResolveIPAddr("ip4:icmp", address)
 		if err != nil {
 			fmt.Println(address+" ping failed: ", err)
-			action := Action{ZondUUID: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), UUID: taskuuid}
-			js, _ := json.Marshal(action)
 
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			p.AddIPAddr(ra)
 			var received = false
@@ -206,18 +217,13 @@ func pingCheck(address string, taskuuid string) {
 				received = true
 				fmt.Printf("IP Addr: %s receive, RTT: %v\n", addr.String(), rtt)
 
-				action = Action{ZondUUID: *zonduuid, Action: "result", Result: rtt.String(), UUID: taskuuid}
-				js, _ = json.Marshal(action)
-
-				Post("http://"+ccAddr+"/zond/task/result", string(js))
+				resultTask(taskuuid, rtt.String())
 			}
 			p.OnIdle = func() {
 				if !received {
 					fmt.Println(address + " ping failed")
-					action := Action{ZondUUID: *zonduuid, Action: "result", Result: "failed", UUID: taskuuid}
-					js, _ := json.Marshal(action)
 
-					Post("http://"+ccAddr+"/zond/task/result", string(js))
+					resultTask(taskuuid, "failed")
 				}
 			}
 			err = p.Run()
@@ -229,10 +235,7 @@ func pingCheck(address string, taskuuid string) {
 }
 
 func dnsCheck(address string, taskuuid string) {
-	ccAddr := *addr
-	var action = Action{ZondUUID: *zonduuid, Action: "block", Result: "", UUID: taskuuid}
-	var js, _ = json.Marshal(action)
-	var status = Post("http://"+ccAddr+"/zond/task/block", string(js))
+	var status = blockTask(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -255,10 +258,8 @@ func dnsCheck(address string, taskuuid string) {
 
 		if err != nil {
 			log.Println(address+" dns failed: ", err)
-			action := Action{ZondUUID: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), UUID: taskuuid}
-			js, _ := json.Marshal(action)
 
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			var s []string
 			for _, ip := range ips {
@@ -267,19 +268,13 @@ func dnsCheck(address string, taskuuid string) {
 			var res = strings.Join(s[:], ",")
 			log.Printf("IPS: %v", res)
 
-			action = Action{ZondUUID: *zonduuid, Action: "result", Result: res, UUID: taskuuid}
-			js, _ = json.Marshal(action)
-
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, res)
 		}
 	}
 }
 
 func tracerouteCheck(address string, taskuuid string) {
-	ccAddr := *addr
-	var action = Action{ZondUUID: *zonduuid, Action: "block", Result: "", UUID: taskuuid}
-	var js, _ = json.Marshal(action)
-	var status = Post("http://"+ccAddr+"/zond/task/block", string(js))
+	var status = blockTask(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -297,10 +292,8 @@ func tracerouteCheck(address string, taskuuid string) {
 
 		if err != nil {
 			log.Println(address+" traceroute failed: ", err)
-			action := Action{ZondUUID: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), UUID: taskuuid}
-			js, _ := json.Marshal(action)
 
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			var s []string
 
@@ -311,19 +304,13 @@ func tracerouteCheck(address string, taskuuid string) {
 			var res = strings.Join(s[:], "\n")
 			log.Printf("Result: %v", res)
 
-			action = Action{ZondUUID: *zonduuid, Action: "result", Result: res, UUID: taskuuid}
-			js, _ = json.Marshal(action)
-
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, res)
 		}
 	}
 }
 
 func headCheck(address string, taskuuid string) {
-	ccAddr := *addr
-	var action = Action{ZondUUID: *zonduuid, Action: "block", Result: "", UUID: taskuuid}
-	var js, _ = json.Marshal(action)
-	var status = Post("http://"+ccAddr+"/zond/task/block", string(js))
+	var status = blockTask(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -339,22 +326,17 @@ func headCheck(address string, taskuuid string) {
 		}
 		if err != nil {
 			log.Println(address+" http head failed: ", err)
-			action := Action{ZondUUID: *zonduuid, Action: "result", Result: fmt.Sprintf("failed: %s", err), UUID: taskuuid}
-			js, _ := json.Marshal(action)
 
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			headers := resp.Header
-			var s string
+			var res string
 			for key, val := range headers {
-				s += fmt.Sprintf("%s: %s\n", key, val)
+				res += fmt.Sprintf("%s: %s\n", key, val)
 			}
-			log.Printf("Headers: %v", s)
+			log.Printf("Headers: %v", res)
 
-			action = Action{ZondUUID: *zonduuid, Action: "result", Result: s, UUID: taskuuid}
-			js, _ = json.Marshal(action)
-
-			Post("http://"+ccAddr+"/zond/task/result", string(js))
+			resultTask(taskuuid, res)
 		}
 	}
 }
