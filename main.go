@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -17,19 +18,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ad/gocc/proto"
+
 	"github.com/kardianos/osext"
 	"github.com/lixiangzhong/traceroute"
 	"github.com/tevino/abool"
+	"google.golang.org/grpc"
 
 	"github.com/blang/semver"
 	"github.com/bogdanovich/dns_resolver"
 	"github.com/gorilla/websocket"
-	"github.com/nu7hatch/gouuid"
+	uuid "github.com/nu7hatch/gouuid"
 	"github.com/rhysd/go-github-selfupdate/selfupdate"
 	"github.com/tatsushid/go-fastping"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 var pongStarted = abool.New()
 
@@ -51,6 +55,7 @@ func selfUpdate(slug string) error {
 
 var zu, _ = uuid.NewV4()
 var addr = flag.String("addr", "localhost:80", "cc address:port")
+var grpclistenaddr = flag.String("grpclistenaddr", "localhost:8080", "grpc listen address:port")
 var zonduuid = flag.String("uuid", zu.String(), "zond uuid")
 var resolverAddress = flag.String("resolver", "8.8.8.8", "resolver address")
 
@@ -63,7 +68,11 @@ type Action struct {
 	UUID     string `json:"uuid"`
 }
 
+type srv struct{}
+
 func main() {
+	_ = initGRPC()
+
 	log.Printf("Started version %s", version)
 
 	ticker := time.NewTicker(10 * time.Minute)
@@ -381,4 +390,56 @@ func Post(url string, jsonData string) string {
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
 	return string(body)
+}
+
+func initGRPC() error {
+	grpcSrv := grpc.NewServer()
+
+	GRPCListener, err := net.Listen("tcp", *grpclistenaddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on the TCP network address %s, %s", *grpclistenaddr, err)
+	}
+
+	grpcServer := NewServer()
+	proto.RegisterActionServer(grpcSrv, grpcServer)
+
+	go func() {
+		if err := grpcSrv.Serve(GRPCListener); err != nil {
+			log.Println(fmt.Errorf("failed to serve grpc: %s", err))
+		}
+	}()
+
+	return nil
+}
+
+func NewServer() *srv {
+	return &srv{}
+}
+
+func (s *srv) Call(ctx context.Context, req *proto.CallRequest) (*proto.CallResponse, error) {
+	if req.Action != "alive" {
+		fmt.Printf("%+v\n", req)
+	}
+
+	if req.Action == "ping" {
+		pingCheck(req.Param, req.UUID)
+	} else if req.Action == "head" {
+		headCheck(req.Param, req.UUID)
+	} else if req.Action == "dns" {
+		dnsCheck(req.Param, req.UUID)
+	} else if req.Action == "traceroute" {
+		tracerouteCheck(req.Param, req.UUID)
+	} else if req.Action == "alive" {
+		if !pongStarted.IsSet() {
+			pongStarted.Set()
+
+			req.ZondUUID = *zonduuid
+			js, _ := json.Marshal(req)
+
+			Post("http://"+*addr+"/zond/pong", string(js))
+
+			pongStarted.UnSet()
+		}
+	}
+	return &proto.CallResponse{Status: "success"}, nil
 }
