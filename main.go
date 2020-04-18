@@ -400,7 +400,7 @@ func initGRPC() error {
 		return fmt.Errorf("failed to listen on the TCP network address %s, %s", *grpclistenaddr, err)
 	}
 
-	grpcServer := NewServer()
+	grpcServer := &srv{}
 	proto.RegisterActionServer(grpcSrv, grpcServer)
 
 	go func() {
@@ -410,10 +410,6 @@ func initGRPC() error {
 	}()
 
 	return nil
-}
-
-func NewServer() *srv {
-	return &srv{}
 }
 
 func (s *srv) Call(ctx context.Context, req *proto.CallRequest) (*proto.CallResponse, error) {
