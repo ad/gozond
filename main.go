@@ -62,12 +62,10 @@ var listenAddr string
 var resolverAddress string
 
 var privKey string
-var pubKey string
 
 func main() {
 	flag.StringVar(&mode, "mode", lookupEnvOrString("MODE", mode), "mode")
 	flag.StringVar(&privKey, "privKey", lookupEnvOrString("PRIVKEY", privKey), "privKey")
-	flag.StringVar(&pubKey, "pubKey", lookupEnvOrString("PUBKEY", pubKey), "pubKey")
 	flag.StringVar(&goccAddr, "gocc", lookupEnvOrString("GOCC", goccAddr), "cc address")
 	flag.StringVar(&listenAddr, "listenAddr", lookupEnvOrString("LISTENADDR", listenAddr), "listen address")
 	flag.StringVar(&resolver, "resolver", lookupEnvOrString("RESOLVERADDR", resolver), "resolver address")
@@ -78,18 +76,18 @@ func main() {
 	log.Printf("Started version %s", version)
 
 	if mode == "server" {
-		runPublic(privKey, pubKey, listenAddr)
+		runPublic(privKey, listenAddr)
 	} else {
 		if goccAddr == "" {
 			log.Fatal("provide -goccAddr (or GOCC env) for client")
 		}
-		runPrivate(privKey, pubKey, goccAddr, listenAddr)
+		runPrivate(privKey, goccAddr, listenAddr)
 	}
 }
 
-func runPublic(privKey, pubKey, listenAddr string) {
+func runPublic(privKey, listenAddr string) {
 	ctx := context.Background()
-	host := setupHost(ctx, privKey, pubKey, listenAddr)
+	host := setupHost(ctx, privKey, listenAddr)
 
 	zonduuid = fmt.Sprintf("%s", host.ID())
 
@@ -101,17 +99,12 @@ func runPublic(privKey, pubKey, listenAddr string) {
 	proto.RegisterActionServer(p.GetGRPCServer(), &ActionServer{C: c, PeerID: zonduuid, GrpcClient: grpcClient})
 	fmt.Println("Public serving...")
 
-	// for {
-	// 	select {
-	// 	case _ = <-c:
 	grpcClient.call(host.ID(), zonduuid)
-	// 		}
-	// 	}
 }
 
-func runPrivate(privKey, pubKey, goccAddr, listenAddr string) {
+func runPrivate(privKey, goccAddr, listenAddr string) {
 	ctx := context.Background()
-	host := setupHost(ctx, privKey, pubKey, listenAddr)
+	host := setupHost(ctx, privKey, listenAddr)
 
 	zonduuid = fmt.Sprintf("%s", host.ID())
 
@@ -142,25 +135,16 @@ func runPrivate(privKey, pubKey, goccAddr, listenAddr string) {
 	select {}
 }
 
-func setupHost(ctx context.Context, privKeyPath, pubKeyPath, listenAddr string) host.Host {
+func setupHost(ctx context.Context, privKeyPath, listenAddr string) host.Host {
 	privBytes, err := ioutil.ReadFile(privKeyPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// pubBytes, err := ioutil.ReadFile(pubKeyPath)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
 	privKey, err := crypto.UnmarshalPrivateKey(privBytes)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// pubKey, err := crypto.UnmarshalPublicKey(pubBytes)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 
 	// var privKey crypto.PrivKey
 	// if len(privKeyStr) == 0 {

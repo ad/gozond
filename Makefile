@@ -18,6 +18,6 @@ clean:
 
 dev: devbuild
 	@docker-compose -f docker-compose.dev.yml up
-# 	@docker-compose -f docker-compose.dev.yml logs -f
+	#@docker-compose -f docker-compose.dev.yml logs -f
 
 .PHONY: boulder
