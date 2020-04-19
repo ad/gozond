@@ -19,12 +19,13 @@ service Action {
 
 message CallRequest {
     string ZondUUID = 1;
-    string Action = 2;
-    string Param  = 3;
-    string Result = 4;
-    string UUID   = 5;
+    string Action   = 2;
+    string Param    = 3;
+    string Result   = 4;
+    string UUID     = 5;
 }
 
 message CallResponse {
-    string status = 1;
+    string status  = 1;
+    string peer_id = 2;
 }

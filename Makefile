@@ -13,7 +13,8 @@ test:
 	@docker run --rm -v $(CWD):$(CWD) -w $(CWD) golang:alpine sh -c "CGO_ENABLED=0 go test -mod=vendor  -v"
 
 clean:
-	@docker-compose down
+	#@docker-compose rm -sfv
+	@docker-compose -f docker-compose.dev.yml rm -sfv
 
 dev: devbuild
 	@docker-compose -f docker-compose.dev.yml up

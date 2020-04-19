@@ -1,4 +1,32 @@
 version: "3"
 services:
-  app:
+  server:
     image: github.com/ad/gozond:dev
+    environment:
+      MODE: server
+      PRIVKEY: config/privServer
+      PUBKEY: config/pubServer
+      GOCC: /ip4/172.28.1.3/tcp/50000/p2p/QmTQqs2sXUXdyF6v1FxzWFkTb1eBxuYdQDjrjFytc8KYd9
+      LISTENADDR: /ip4/172.28.1.2/tcp/50000
+    networks:
+        testing_net:
+            ipv4_address: 172.28.1.2
+  client:
+    image: github.com/ad/gozond:dev
+    environment:
+      MODE: client
+      PRIVKEY: config/privClient
+      PUBKEY: config/pubClient
+      GOCC: /ip4/172.28.1.2/tcp/50000/p2p/Qmbmjwu8ZXjc2X1uYbckqdYR6BR6kVksA7YVoXKxe37K6o
+      LISTENADDR: /ip4/172.28.1.3/tcp/50000
+    depends_on:
+      - server
+    networks:
+        testing_net:
+            ipv4_address: 172.28.1.3
+networks:
+    testing_net:
+        ipam:
+            driver: default
+            config:
+                - subnet: 172.28.0.0/16
