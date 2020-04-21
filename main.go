@@ -3,15 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -20,44 +19,45 @@ import (
 
 	"github.com/ad/gocc/proto"
 
+	"github.com/bogdanovich/dns_resolver"
 	"github.com/kardianos/osext"
 	"github.com/lixiangzhong/traceroute"
+	uuid "github.com/nu7hatch/gouuid"
+	"github.com/tatsushid/go-fastping"
 	"github.com/tevino/abool"
 	"google.golang.org/grpc"
-
-	"github.com/blang/semver"
-	"github.com/bogdanovich/dns_resolver"
-	"github.com/gorilla/websocket"
-	uuid "github.com/nu7hatch/gouuid"
-	"github.com/rhysd/go-github-selfupdate/selfupdate"
-	"github.com/tatsushid/go-fastping"
+	"google.golang.org/grpc/metadata"
+	// "github.com/blang/semver"
+	// "github.com/rhysd/go-github-selfupdate/selfupdate"
 )
 
-const version = "0.1.2"
+const version = "0.2.0"
 
-var pongStarted = abool.New()
+// func selfUpdate(slug string) error {
+// 	previous := semver.MustParse(version)
+// 	latest, err := selfupdate.UpdateSelf(previous, slug)
+// 	if err != nil {
+// 		return err
+// 	}
 
-func selfUpdate(slug string) error {
-	previous := semver.MustParse(version)
-	latest, err := selfupdate.UpdateSelf(previous, slug)
-	if err != nil {
-		return err
-	}
+// 	if !previous.Equals(latest.Version) {
+// 		fmt.Println("Update successfully done to version", latest.Version)
 
-	if !previous.Equals(latest.Version) {
-		fmt.Println("Update successfully done to version", latest.Version)
+// 		Restart()
+// 	}
 
-		Restart()
-	}
+// 	return nil
+// }
 
-	return nil
-}
+var (
+	pongStarted     = abool.New()
+	zu, _           = uuid.NewV4()
+	goccAddr        string
+	zonduuid        string
+	resolverAddress string
 
-var zu, _ = uuid.NewV4()
-var addr = flag.String("addr", "localhost:80", "cc address:port")
-var grpclistenaddr = flag.String("grpclistenaddr", "localhost:8080", "grpc listen address:port")
-var zonduuid = flag.String("uuid", zu.String(), "zond uuid")
-var resolverAddress = flag.String("resolver", "8.8.8.8", "resolver address")
+	server srv
+)
 
 // Action struct
 type Action struct {
@@ -68,107 +68,40 @@ type Action struct {
 	UUID     string `json:"uuid"`
 }
 
-type srv struct{}
+type srv struct {
+	stream proto.Zond_MessageClient
+}
 
 func main() {
-	_ = initGRPC()
-
 	log.Printf("Started version %s", version)
 
-	ticker := time.NewTicker(10 * time.Minute)
-	go func(ticker *time.Ticker) {
-		for {
-			select {
-			case <-ticker.C:
-				if err := selfUpdate("ad/gozond"); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-			}
-		}
-	}(ticker)
+	// ticker := time.NewTicker(10 * time.Minute)
+	// go func(ticker *time.Ticker) {
+	// 	for {
+	// 		select {
+	// 		case <-ticker.C:
+	// 			if err := selfUpdate("ad/gozond"); err != nil {
+	// 				fmt.Fprintln(os.Stderr, err)
+	// 			}
+	// 		}
+	// 	}
+	// }(ticker)
+
+	flag.StringVar(&goccAddr, "gocc", lookupEnvOrString("GOZOND_GOCC", goccAddr), "cc address:port")
+	flag.StringVar(&zonduuid, "uuid", lookupEnvOrString("GOZOND_UUID", zu.String()), "zond uuid")
+	flag.StringVar(&resolverAddress, "resolver", lookupEnvOrString("GOZOND_RESOLVER", "8.8.8.8"), "resolver address")
 
 	flag.Parse()
 	log.SetFlags(0)
 
+	if err := initGRPC(); err != nil {
+		log.Fatal(err)
+	}
+
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	u := url.URL{Scheme: "ws", Host: *addr, Path: "/sub/tasks,zond" + *zonduuid}
-	log.Printf("connecting to %s", u.String())
-
-	ws, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{"X-ZondUuid": {*zonduuid}})
-	if ws != nil {
-		defer ws.Close()
-	}
-	if err != nil {
-		log.Fatal("dial:", err)
-	}
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		for {
-			_, message, err := ws.ReadMessage()
-			if err != nil {
-				log.Println("read error:", err)
-				time.Sleep(time.Duration(rand.Intn(5)) * time.Second)
-
-				Restart()
-
-				return
-			}
-
-			var action = new(Action)
-			err = json.Unmarshal(message, &action)
-			if err != nil {
-				fmt.Println("unmarshal error:", err)
-			} else {
-				if action.Action != "alive" {
-					fmt.Printf("%+v\n", action)
-				}
-
-				if action.Action == "ping" {
-					pingCheck(action.Param, action.UUID)
-				} else if action.Action == "head" {
-					headCheck(action.Param, action.UUID)
-				} else if action.Action == "dns" {
-					dnsCheck(action.Param, action.UUID)
-				} else if action.Action == "traceroute" {
-					tracerouteCheck(action.Param, action.UUID)
-				} else if action.Action == "alive" {
-					if !pongStarted.IsSet() {
-						pongStarted.Set()
-
-						action.ZondUUID = *zonduuid
-						js, _ := json.Marshal(action)
-
-						Post("http://"+*addr+"/zond/pong", string(js))
-
-						pongStarted.UnSet()
-					}
-				}
-			}
-		}
-	}()
-
-	for {
-		select {
-		case <-done:
-			return
-		case <-interrupt:
-			log.Println("interrupt")
-			err := ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-			if err != nil {
-				log.Println("write close error:", err)
-				return
-			}
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-			}
-			return
-		}
-	}
+	<-interrupt
 }
 
 // Restart app
@@ -186,24 +119,8 @@ func Restart() error {
 	return nil
 }
 
-func blockTask(taskuuid string) (status string) {
-	var action = Action{ZondUUID: *zonduuid, Action: "block", Result: "", UUID: taskuuid}
-	var js, _ = json.Marshal(action)
-	status = Post("http://"+*addr+"/zond/task/block", string(js))
-
-	return status
-}
-
-func resultTask(taskuuid string, result string) (status string) {
-	var action = Action{ZondUUID: *zonduuid, Action: "result", Result: result, UUID: taskuuid}
-	var js, _ = json.Marshal(action)
-	status = Post("http://"+*addr+"/zond/task/result", string(js))
-
-	return status
-}
-
 func pingCheck(address string, taskuuid string) {
-	var status = blockTask(taskuuid)
+	status, _ := server.Block(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -218,7 +135,7 @@ func pingCheck(address string, taskuuid string) {
 		if err != nil {
 			fmt.Println(address+" ping failed: ", err)
 
-			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
+			server.Result(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			p.AddIPAddr(ra)
 			var received = false
@@ -226,13 +143,13 @@ func pingCheck(address string, taskuuid string) {
 				received = true
 				fmt.Printf("IP Addr: %s receive, RTT: %v\n", addr.String(), rtt)
 
-				resultTask(taskuuid, rtt.String())
+				server.Result(taskuuid, rtt.String())
 			}
 			p.OnIdle = func() {
 				if !received {
 					fmt.Println(address + " ping failed")
 
-					resultTask(taskuuid, "failed")
+					server.Result(taskuuid, "failed")
 				}
 			}
 			err = p.Run()
@@ -244,7 +161,7 @@ func pingCheck(address string, taskuuid string) {
 }
 
 func dnsCheck(address string, taskuuid string) {
-	var status = blockTask(taskuuid)
+	status, _ := server.Block(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -257,9 +174,9 @@ func dnsCheck(address string, taskuuid string) {
 		// var resolverAddress = "8.8.8.8"
 		if strings.Count(address, "-") == 1 {
 			s := strings.Split(address, "-")
-			address, *resolverAddress = s[0], s[1]
+			address, resolverAddress = s[0], s[1]
 		}
-		resolver := dns_resolver.New([]string{*resolverAddress})
+		resolver := dns_resolver.New([]string{resolverAddress})
 		// resolver := dns_resolver.NewFromResolvConf("resolv.conf")
 		resolver.RetryTimes = 5
 
@@ -268,7 +185,7 @@ func dnsCheck(address string, taskuuid string) {
 		if err != nil {
 			log.Println(address+" dns failed: ", err)
 
-			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
+			server.Result(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			var s []string
 			for _, ip := range ips {
@@ -277,13 +194,13 @@ func dnsCheck(address string, taskuuid string) {
 			var res = strings.Join(s[:], ",")
 			log.Printf("IPS: %v", res)
 
-			resultTask(taskuuid, res)
+			server.Result(taskuuid, res)
 		}
 	}
 }
 
 func tracerouteCheck(address string, taskuuid string) {
-	var status = blockTask(taskuuid)
+	status, _ := server.Block(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -302,7 +219,7 @@ func tracerouteCheck(address string, taskuuid string) {
 		if err != nil {
 			log.Println(address+" traceroute failed: ", err)
 
-			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
+			server.Result(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			var s []string
 
@@ -313,13 +230,13 @@ func tracerouteCheck(address string, taskuuid string) {
 			var res = strings.Join(s[:], "\n")
 			log.Printf("Result: %v", res)
 
-			resultTask(taskuuid, res)
+			server.Result(taskuuid, res)
 		}
 	}
 }
 
 func headCheck(address string, taskuuid string) {
-	var status = blockTask(taskuuid)
+	status, _ := server.Block(taskuuid)
 
 	if status != `{"status": "ok", "message": "ok"}` {
 		if status == `{"status": "error", "message": "only one task at time is allowed"}` {
@@ -336,7 +253,7 @@ func headCheck(address string, taskuuid string) {
 		if err != nil {
 			log.Println(address+" http head failed: ", err)
 
-			resultTask(taskuuid, fmt.Sprintf("failed: %s", err))
+			server.Result(taskuuid, fmt.Sprintf("failed: %s", err))
 		} else {
 			headers := resp.Header
 			var res string
@@ -345,12 +262,11 @@ func headCheck(address string, taskuuid string) {
 			}
 			log.Printf("Headers: %v", res)
 
-			resultTask(taskuuid, res)
+			server.Result(taskuuid, res)
 		}
 	}
 }
 
-// Get request and return response
 func Get(url string) string {
 	resp, err := http.Get(url)
 	if resp != nil {
@@ -372,7 +288,7 @@ func Post(url string, jsonData string) string {
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-ZondUuid", *zonduuid)
+	req.Header.Set("X-ZondUuid", zonduuid)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -393,53 +309,120 @@ func Post(url string, jsonData string) string {
 }
 
 func initGRPC() error {
-	grpcSrv := grpc.NewServer()
-
-	GRPCListener, err := net.Listen("tcp", *grpclistenaddr)
+	conn, err := grpc.Dial(goccAddr, grpc.WithInsecure())
 	if err != nil {
-		return fmt.Errorf("failed to listen on the TCP network address %s, %s", *grpclistenaddr, err)
+		return fmt.Errorf("can not connect with server %v", err)
 	}
 
-	grpcServer := NewServer()
-	proto.RegisterActionServer(grpcSrv, grpcServer)
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "ZondUUID", zonduuid)
+
+	stream, err := proto.NewZondClient(conn).Message(ctx)
+	if err != nil {
+		return fmt.Errorf("open stream error %v", err)
+	}
+
+	server = srv{
+		stream: stream,
+	}
+
+	done := make(chan bool)
 
 	go func() {
-		if err := grpcSrv.Serve(GRPCListener); err != nil {
-			log.Println(fmt.Errorf("failed to serve grpc: %s", err))
+		for {
+			resp, err := stream.Recv()
+			if err == io.EOF {
+				close(done)
+				return
+			}
+			if err != nil {
+				fmt.Printf("can not receive %v", err)
+			}
+
+			if resp.Action != "alive" {
+				fmt.Printf("%+v\n", resp)
+			}
+
+			if resp.Action == "ping" {
+				pingCheck(resp.Param, resp.UUID)
+			} else if resp.Action == "head" {
+				headCheck(resp.Param, resp.UUID)
+			} else if resp.Action == "dns" {
+				dnsCheck(resp.Param, resp.UUID)
+			} else if resp.Action == "traceroute" {
+				tracerouteCheck(resp.Param, resp.UUID)
+			} else if resp.Action == "alive" {
+				if !pongStarted.IsSet() {
+					pongStarted.Set()
+
+					server.Pong()
+
+					pongStarted.UnSet()
+				}
+			}
 		}
 	}()
+
+	go func() {
+		<-ctx.Done()
+		if err := ctx.Err(); err != nil {
+			fmt.Printf("%s", err)
+		}
+		close(done)
+	}()
+
+	// // <-done
+	// req := proto.CallRequest{Action: "test", ZondUUID: *zonduuid}
+	// if err := stream.Send(&req); err != nil {
+	// 	log.Fatalf("can not send %v", err)
+	// }
 
 	return nil
 }
 
-func NewServer() *srv {
-	return &srv{}
+func (s *srv) Block(taskUUID string) (string, error) {
+	req := proto.MessageRequest{ZondUUID: zonduuid, Action: "block", UUID: taskUUID}
+	if err := s.stream.Send(&req); err != nil {
+		return "", fmt.Errorf("can not send %v", err)
+	}
+	// TODO:
+	//       create channel
+	//       wait result or timeout
+	//       return result and close channel
+
+	return "ok ok", nil
 }
 
-func (s *srv) Call(ctx context.Context, req *proto.CallRequest) (*proto.CallResponse, error) {
-	if req.Action != "alive" {
-		fmt.Printf("%+v\n", req)
+func (s *srv) Result(taskUUID, result string) (string, error) {
+	req := proto.MessageRequest{ZondUUID: zonduuid, Action: "result", Result: result, UUID: taskUUID}
+	if err := s.stream.Send(&req); err != nil {
+		return "", fmt.Errorf("can not send %v", err)
 	}
+	// TODO: retry on error
 
-	if req.Action == "ping" {
-		pingCheck(req.Param, req.UUID)
-	} else if req.Action == "head" {
-		headCheck(req.Param, req.UUID)
-	} else if req.Action == "dns" {
-		dnsCheck(req.Param, req.UUID)
-	} else if req.Action == "traceroute" {
-		tracerouteCheck(req.Param, req.UUID)
-	} else if req.Action == "alive" {
-		if !pongStarted.IsSet() {
-			pongStarted.Set()
+	// TODO:
+	//       create channel
+	//       wait result or timeout
+	//       return result and close channel
 
-			req.ZondUUID = *zonduuid
-			js, _ := json.Marshal(req)
+	return "ok ok", nil
+}
 
-			Post("http://"+*addr+"/zond/pong", string(js))
-
-			pongStarted.UnSet()
-		}
+func (s *srv) Pong() (string, error) {
+	req := proto.MessageRequest{ZondUUID: zonduuid, Action: "pong"}
+	if err := s.stream.Send(&req); err != nil {
+		return "", fmt.Errorf("can not send %v", err)
 	}
-	return &proto.CallResponse{Status: "success"}, nil
+	// TODO:
+	//       create channel
+	//       wait result or timeout
+	//       return result and close channel
+
+	return "ok ok", nil
+}
+
+func lookupEnvOrString(key string, defaultVal string) string {
+	if val, ok := os.LookupEnv(key); ok {
+		return val
+	}
+	return defaultVal
 }
