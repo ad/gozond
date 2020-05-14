@@ -1,5 +1,5 @@
 # gozond
-The part of project [gocc](https://github.com/ad/gocc), a probe to run on the endpoints, performs monitoring tasks and reports the results.
+The part of project [gocc](https://github.com/ad/gocc), a probe to run on the endpoints, performs monitoring tasks and reports the results
 
 ## install/update
 go get -u https://github.com/ad/gozond
